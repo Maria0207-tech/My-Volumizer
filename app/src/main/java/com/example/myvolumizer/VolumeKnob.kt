@@ -17,14 +17,20 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import androidx.compose.runtime.getValue
+
 @Composable
 fun VolumeKnob(
     volume: Int,
+
+    boostFactor: Float = 1.0f, // New param to indicate boost
+
     onVolumeChange: (Int) -> Unit = {},
     modifier: Modifier = Modifier
+
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
 
+    // Animate needle smoothly
     val animatedSweep by animateFloatAsState(
         targetValue = volume / 100f * 360f,
         animationSpec = tween(durationMillis = 300)
@@ -102,7 +108,14 @@ fun VolumeKnob(
             )
         }
 
-        // Needle with glow
+        // Needle color based on boost factor
+        val needleColor = when {
+            boostFactor <= 1.0f -> Color.Red
+            boostFactor <= 1.5f -> Color(0xFFFF9800) // Orange
+            else -> Color.Yellow
+        }
+
+        // Needle
         val startAngle = -90f
         val angleRad = Math.toRadians((startAngle + animatedSweep).toDouble())
         val indicatorLength = radius * 0.8f
@@ -111,7 +124,7 @@ fun VolumeKnob(
 
         drawLine(
             brush = Brush.radialGradient(
-                colors = listOf(Color.Red, Color(0xFFFF5252)),
+                colors = listOf(needleColor, needleColor.copy(alpha = 0.8f)),
                 center = center,
                 radius = indicatorLength
             ),

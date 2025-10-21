@@ -1,19 +1,22 @@
 package com.example.myvolumizer
 
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import androidx.navigation.NavHostController
+import androidx.navigation.compose.currentBackStackEntryAsState
+
+//data class BottomNavItem(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val route: String)
 
 @Composable
 fun MyBottomBar(navController: NavHostController) {
@@ -23,7 +26,9 @@ fun MyBottomBar(navController: NavHostController) {
         BottomNavItem("About", Icons.Filled.Info, "about")
     )
 
-    var selectedItem by remember { mutableStateOf("home") }
+    // Observe current back stack entry
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
 
     Surface(
         modifier = Modifier
@@ -34,7 +39,9 @@ fun MyBottomBar(navController: NavHostController) {
         color = MaterialTheme.colorScheme.surface
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -42,24 +49,26 @@ fun MyBottomBar(navController: NavHostController) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.clickable {
-                        selectedItem = item.route
-                        navController.navigate(item.route) {
-                            popUpTo(navController.graph.startDestinationId)
-                            launchSingleTop = true
+                        if (currentRoute != item.route) {
+                            navController.navigate(item.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
                     }
                 ) {
                     Icon(
                         imageVector = item.icon,
                         contentDescription = item.label,
-                        tint = if (selectedItem == item.route)
+                        tint = if (currentRoute == item.route)
                             MaterialTheme.colorScheme.primary
                         else
                             MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = item.label,
-                        color = if (selectedItem == item.route)
+                        color = if (currentRoute == item.route)
                             MaterialTheme.colorScheme.primary
                         else
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -69,5 +78,3 @@ fun MyBottomBar(navController: NavHostController) {
         }
     }
 }
-
-

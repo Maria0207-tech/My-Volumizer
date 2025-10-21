@@ -3,83 +3,73 @@ package com.example.myvolumizer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.activity.OnBackPressedCallback
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.myvolumizer.ui.theme.MyVolumizerTheme
+
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // enableEdgeToEdge()
+
+        // Handle back button properly
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                finish() // Default behavior
+            }
+        })
+
         setContent {
-            MyVolumizerTheme {
+            val themeViewModel: ThemeViewModel = viewModel()
+            val currentTheme by themeViewModel.theme.collectAsState()
+
+            // 🌗 Dynamically determine theme
+            val darkTheme = when (currentTheme) {
+                "Dark" -> true
+                "Light" -> false
+                else -> isSystemInDarkTheme() // "System Default"
+            }
+
+            // 🎨 Apply dynamic theme to entire app
+            MyVolumizerTheme(darkTheme = darkTheme) {
                 val navController = rememberNavController()
+                val currentBackStackEntry = navController.currentBackStackEntryAsState()
+                val currentRoute = currentBackStackEntry.value?.destination?.route
+
                 Scaffold(
-                    contentWindowInsets = androidx.compose.foundation.layout.WindowInsets.safeDrawing,
-                    bottomBar = { MyBottomBar(navController) }  // ✅ pass navController
+                    bottomBar = {
+                        // ✅ Hide bottom bar on splash screen
+                        if (currentRoute != "splash") {
+                            MyBottomBar(navController)
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.background // smooth background transition
                 ) { paddingValues ->
+                    // ✅ Pass ThemeViewModel into NavGraph so screens like About can access it
                     NavGraph(
                         navController = navController,
-                        modifier = Modifier.padding(paddingValues) // paddingValues ko Modifier me convert karke pass karo
+                        modifier = Modifier.padding(paddingValues),
+                        themeViewModel = themeViewModel
                     )
                 }
             }
         }
+
+
     }
 }
 
-@Composable
-fun MainScreen(modifier: Modifier = Modifier) {
-    // Centered Text Box
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        tonalElevation = 4.dp,
-        modifier = Modifier.padding(16.dp),
-    ) {
-        Text(
-            text = "MY VOLUMIZER STARTS",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(16.dp)
-        )
-    }
-}
-
-
-
-
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    MyVolumizerTheme {
-        val navController = rememberNavController()
-        Scaffold(bottomBar = { MyBottomBar(navController) }) {
-            MainScreen(modifier = Modifier.padding(it))
-        }
-    }
-}
