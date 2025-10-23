@@ -1,6 +1,5 @@
 package com.example.myvolumizer
 
-import android.net.Uri
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -11,7 +10,7 @@ import androidx.navigation.compose.composable
 @Composable
 fun NavGraph(navController: NavHostController, modifier: Modifier = Modifier,    themeViewModel: ThemeViewModel ) {
     // Shared state between screens
-    var selectedAudioUri by remember { mutableStateOf<Uri?>(null) }
+
     val settingsViewModel: SettingsViewModel = viewModel()
 
 
@@ -25,15 +24,13 @@ fun NavGraph(navController: NavHostController, modifier: Modifier = Modifier,   
         }
 
         composable("home") {
-            HomeScreen(selectedAudioUri = selectedAudioUri)
+            HomeScreen(viewModel = settingsViewModel)
         }
 
         composable("settings") {
             SettingsScreen(
                 navController = navController,
-                onAudioSelected = { uri ->
-                    selectedAudioUri = uri // ✅ Lifted state for audio
-                },
+               // onAudioSelected = { uri -> selectedAudioUri = uri  },
                 viewModel = settingsViewModel
             )
         }
