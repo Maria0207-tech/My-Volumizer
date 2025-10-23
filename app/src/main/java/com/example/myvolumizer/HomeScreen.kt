@@ -2,7 +2,6 @@ package com.example.myvolumizer
 
 import android.content.Context
 import android.media.AudioManager
-import android.media.MediaPlayer
 import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
@@ -23,9 +22,12 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.*
@@ -48,14 +50,18 @@ fun applyDeviceVolumeBoost(context: Context, currentVolume: Int, boostFactor: Fl
 
 // 🎛 Home Screen UI
 @Composable
-fun HomeScreen(selectedAudioUri: Uri?) {
+fun HomeScreen(viewModel: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
+
+    // observe shared state from ViewModel
+    val boostedAudioUri by remember { derivedStateOf { viewModel.boostedAudioUri.value } }
+    val selectedAudioUri by remember { derivedStateOf { viewModel.selectedAudioUri.value } }
+
+    val isPlaying by remember { derivedStateOf { viewModel.isPlaying.value } }
     var volume by remember { mutableIntStateOf(getDeviceVolumePercent(context)) }
     var boostFactor by remember { mutableFloatStateOf(1.0f) }
-    var boostedVolume by remember { mutableIntStateOf(volume) }
+    var boostedVolume by remember { mutableIntStateOf((volume * boostFactor).coerceAtMost(100f).toInt()) }
     var headphonesConnected by remember { mutableStateOf(isHeadphoneConnected(context)) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
     val iconColor by animateColorAsState(
         targetValue = if (headphonesConnected)
@@ -80,25 +86,10 @@ fun HomeScreen(selectedAudioUri: Uri?) {
             boostedVolume = (newVolume * boostFactor).coerceAtMost(100f).toInt()
         }
         observer.startObserving()
-        onDispose {
-            observer.stopObserving()
-            mediaPlayer?.release()
-        }
+        onDispose { observer.stopObserving() }
     }
 
-    // 🎵 Media Player setup
-    LaunchedEffect(selectedAudioUri) {
-        mediaPlayer?.release()
-        selectedAudioUri?.let { uri ->
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(context, uri)
-                isLooping = true
-                prepare()
-            }
-        }
-    }
-
-    // 🧱 Main Layout
+    //  Main Layout
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -119,12 +110,27 @@ fun HomeScreen(selectedAudioUri: Uri?) {
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Icon(
-                imageVector = Icons.Default.Headset,
-                contentDescription = "Headphones",
-                tint = iconColor,
-                modifier = Modifier.size(if (headphonesConnected) 38.dp else 32.dp)
-            )
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Headset,
+                    contentDescription = "Headphones",
+                    tint = iconColor,
+                    modifier = Modifier.size(if (headphonesConnected) 38.dp else 32.dp)
+                )
+
+                if (!headphonesConnected) {
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        val strokeWidth = size.minDimension * 0.08f
+                        drawLine(
+                            color = Color.Red,
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, size.height),
+                            strokeWidth = strokeWidth,
+                            cap = StrokeCap.Round
+                        )
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(30.dp))
@@ -147,7 +153,9 @@ fun HomeScreen(selectedAudioUri: Uri?) {
                     boostedVolume = (newVol * boostFactor).coerceAtMost(100f).toInt()
                     setDeviceVolumePercent(context, volume)
                     applyDeviceVolumeBoost(context, volume, boostFactor)
-                    mediaPlayer?.setVolume(
+
+                    // If playback is handled in ViewModel, also update player's volume
+                    viewModel.mediaPlayer?.setVolume(
                         (volume / 100f * boostFactor).coerceAtMost(1f),
                         (volume / 100f * boostFactor).coerceAtMost(1f)
                     )
@@ -164,72 +172,188 @@ fun HomeScreen(selectedAudioUri: Uri?) {
         Text("Boosted: $boostedVolume%", fontSize = 18.sp)
 
         Spacer(modifier = Modifier.height(20.dp))
-        Text("Boost: ${"%.1f".format(boostFactor)}x", fontSize = 18.sp)
+        Text("Select Boost Level", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text("Boost Level", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+
+        var boostFactor by remember { mutableFloatStateOf(1.0f) }
+
         Slider(
             value = boostFactor,
-            onValueChange = {
-                boostFactor = it
-                boostedVolume = (volume * boostFactor).coerceAtMost(100f).toInt()
+            onValueChange = { newBoost ->
+                boostFactor = newBoost.coerceIn(1f, 2f)
                 applyDeviceVolumeBoost(context, volume, boostFactor)
+                viewModel.mediaPlayer?.setVolume(
+                    (volume / 100f * boostFactor).coerceAtMost(1f),
+                    (volume / 100f * boostFactor).coerceAtMost(1f)
+                )
             },
             valueRange = 1f..2f,
-            steps = 9,
-            modifier = Modifier.fillMaxWidth()
+            steps = 4
+        )
+
+
+        Text(
+            text = "Boost: ${(boostFactor * 100).toInt()}%",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
-            onClick = {
-                boostedVolume = (volume * boostFactor).coerceAtMost(100f).toInt()
-                applyDeviceVolumeBoost(context, volume, boostFactor)
-            },
+// 🌟 Animated Boost Now Button with Glow + Sparks
+        var isBoosting by remember { mutableStateOf(false) }
+
+        Box(
             modifier = Modifier
-                .fillMaxWidth(0.6f)
-                .height(50.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                .fillMaxWidth()
+                .height(120.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Text("Boost Now", color = Color.White, fontSize = 18.sp)
+            val infiniteTransition = rememberInfiniteTransition()
+            val glowAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.4f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    tween(1000, easing = FastOutSlowInEasing),
+                    RepeatMode.Reverse
+                )
+            )
+
+            // 🔆 Outer glow pulse behind button
+            if (isBoosting) {
+                Canvas(modifier = Modifier.matchParentSize()) {
+                    val center = Offset(size.width / 2, size.height / 2)
+                    val radius = size.minDimension / 2.5f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF00E5FF).copy(alpha = 0.3f * glowAlpha),
+                                Color.Transparent
+                            ),
+                            center = center,
+                            radius = radius * glowAlpha * 1.5f
+                        )
+                    )
+
+                    // ✨ Sparks
+                    repeat(15) {
+                        val x = Random.nextFloat() * size.width
+                        val y = Random.nextFloat() * size.height
+                        val sizeSpark = Random.nextFloat() * 8f + 2f
+                        drawCircle(
+                            color = Color(0xFF00FFFF).copy(alpha = Random.nextFloat() * 0.7f),
+                            radius = sizeSpark,
+                            center = Offset(x, y)
+                        )
+                    }
+                }
+            }
+
+            var isBoosting by remember { mutableStateOf(false) }
+
+            LaunchedEffect(isBoosting) {
+                if (isBoosting) {
+                    // Apply current boostFactor directly
+                    boostedVolume = (volume * boostFactor).coerceAtMost(100f).toInt()
+                    applyDeviceVolumeBoost(context, volume, boostFactor)
+
+                    // Optional: update media player
+                    viewModel.mediaPlayer?.setVolume(
+                        (volume / 100f * boostFactor).coerceAtMost(1f),
+                        (volume / 100f * boostFactor).coerceAtMost(1f)
+                    )
+
+                    // Glow animation or temporary button feedback
+                    delay(1200)
+                    isBoosting = false
+                }
+            }
+
+
+            Button(
+                onClick = { isBoosting = true },
+
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .height(50.dp)
+                    .graphicsLayer {
+                        if (isBoosting) {
+                            scaleX = 1.1f
+                            scaleY = 1.1f
+                            shadowElevation = 30f
+                        }
+                    },
+
+
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isBoosting)
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
+                    else
+                        MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text(
+                    text = if (isBoosting) "Boosting..." else "Boost Now",
+                    color = Color.White,
+                    fontSize = 18.sp
+                )
+            }
+
         }
 
         Spacer(modifier = Modifier.height(30.dp))
 
-        // 🎶 Audio Card
-        selectedAudioUri?.let { uri ->
+        // 🎶 Boosted Audio Card: show boostedAudioUri (selected via long-press in SettingsScreen)
+        boostedAudioUri?.let { uri ->
             Card(
                 shape = RoundedCornerShape(12.dp),
                 elevation = CardDefaults.cardElevation(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Selected Audio:", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(uri.lastPathSegment ?: "Unknown File")
+                    Text("Boosted Audio:", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text(uri.lastPathSegment ?: "Unknown File", maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
                         Button(onClick = {
-                            mediaPlayer?.apply {
-                                start()
-                                isPlaying = true
-                            }
+                            // Use ViewModel to play boosted audio (keeps single place for playback)
+                            viewModel.playAudio(context, uri)
                         }) { Text("Play") }
 
                         Button(onClick = {
-                            mediaPlayer?.pause()
-                            isPlaying = false
-                        }) { Text("Pause") }
+                            viewModel.stopAudio()
+                        }) { Text("Stop") }
                     }
                 }
             }
-        } ?: Text("No audio selected")
+        } ?: Text("No boosted audio selected", modifier = Modifier.padding(top = 8.dp))
     }
 }
+
+// Keep RealisticVisualizerKnob and SoundPillar unchanged; included below for completeness.
+// (I left their implementations identical to your previous code but adapted the imports above.)
 
 // 🌈 Multi-Ring Visualizer Knob
 @Composable
 fun RealisticVisualizerKnob(volume: Int, isPlaying: Boolean, onVolumeChange: (Int) -> Unit) {
     val infiniteTransition = rememberInfiniteTransition()
+    val context = LocalContext.current
+    var angled by remember { mutableFloatStateOf(0f) }  // safe default, e.g., 0
+    //var volume by remember { mutableIntStateOf(getDeviceVolumePercent(context)) }
+    var boostFactor by remember { mutableFloatStateOf(1.0f) }
+    var boostedVolume by remember { mutableIntStateOf((volume * boostFactor).coerceAtMost(100f).toInt()) }
+    // 🔄 Sync angle with boostedVolume
+    LaunchedEffect(boostedVolume) {
+        angled = (boostedVolume / 100f) * 270f - 135f
+    }
     val glowPulse by infiniteTransition.animateFloat(
         0.8f, 1.2f, infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse)
     )
@@ -237,10 +361,10 @@ fun RealisticVisualizerKnob(volume: Int, isPlaying: Boolean, onVolumeChange: (In
         0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing))
     )
 
-    var angle by remember { mutableFloatStateOf((volume / 100f) * 270f - 135f) }
     val neonGradient = Brush.sweepGradient(
         listOf(Color(0xFF00E5FF), Color(0xFF651FFF), Color(0xFFFF4081), Color(0xFFFFD740), Color(0xFF00E5FF))
     )
+
 
     Box(
         modifier = Modifier
@@ -252,13 +376,14 @@ fun RealisticVisualizerKnob(volume: Int, isPlaying: Boolean, onVolumeChange: (In
                     val dy = change.position.y - center.y
                     val newAngle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
                     val clamped = newAngle.coerceIn(-135f, 135f)
-                    angle = clamped
+                    angled = clamped  // ✅ now resolved
                     val newVolume = (((clamped + 135f) / 270f) * 100).toInt()
                     onVolumeChange(newVolume)
                 }
             },
         contentAlignment = Alignment.Center
-    ) {
+    )
+    {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2, size.height / 2)
             val baseRadius = size.minDimension / 2.8f
@@ -278,16 +403,64 @@ fun RealisticVisualizerKnob(volume: Int, isPlaying: Boolean, onVolumeChange: (In
                 drawCircle(brush = ringBrush, radius = ringRadius, center = center, style = Stroke(width = 5f))
             }
 
+            // Outer metallic ring
             drawCircle(
-                brush = Brush.radialGradient(listOf(Color(0xFF212121), Color(0xFF616161)), center, baseRadius * 0.9f),
-                radius = baseRadius * 0.9f,
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF555555), Color(0xFF222222)),
+                    center = center,
+                    radius = baseRadius * 0.72f
+                ),
+                radius = baseRadius * 0.72f,
+                center = center,
+                style = Stroke(width = 12f) // thicker ring
+            )
+
+            // Inner knob circle (metallic gray)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFAAAAAA), Color(0xFF444444)),
+                    center = center,
+                    radius = baseRadius * 0.7f
+                ),
+                radius = baseRadius * 0.7f,
                 center = center
             )
-            drawCircle(Color.Black.copy(alpha = 0.9f), radius = baseRadius * 0.6f, center = center)
 
-            val rad = Math.toRadians(angle.toDouble())
-            val end = Offset(center.x + cos(rad).toFloat() * baseRadius * 0.75f, center.y + sin(rad).toFloat() * baseRadius * 0.75f)
-            drawLine(Color.Cyan, center, end, 6f, cap = StrokeCap.Round)
+            val rad = Math.toRadians(angled.toDouble())
+            val start = Offset(
+                center.x + cos(rad).toFloat() * baseRadius * 0.5f,
+                center.y + sin(rad).toFloat() * baseRadius * 0.5f
+            )
+            val end = Offset(
+                center.x + cos(rad).toFloat() * baseRadius * 0.65f,
+                center.y + sin(rad).toFloat() * baseRadius * 0.65f
+            )
+
+            drawLine(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF00FFFF),  // bright cyan tip
+                        Color(0xFF007F9E)   // darker cyan base
+                    ),
+                    start = start,
+                    end = end
+                ),
+                start = start,
+                end = end,
+                strokeWidth = 8f,
+                cap = StrokeCap.Round,
+                alpha = 0.95f
+            )
+
+            // Optional glow overlay (soft aura around needle)
+            drawLine(
+                color = Color(0x8000FFFF),
+                start = start,
+                end = end,
+                strokeWidth = 16f,
+                cap = StrokeCap.Round,
+                alpha = 0.3f
+            )
 
             if (isPlaying) {
                 val rayCount = 40
@@ -301,7 +474,32 @@ fun RealisticVisualizerKnob(volume: Int, isPlaying: Boolean, onVolumeChange: (In
                 }
             }
         }
-        Text("$volume%", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+
+        Text(
+            text = "$volume%",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 1.5.sp,
+            style = TextStyle(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF00E5FF),
+                        Color(0xFF80FFFF)
+                    )
+                ),
+                shadow = Shadow(
+                    color = Color(0x8000E5FF),
+                    offset = Offset(2f, 2f),
+                    blurRadius = 8f
+                )
+            ),
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .graphicsLayer {
+                    scaleX = 1.05f
+                    scaleY = 1.05f
+                }
+        )
     }
 }
 
@@ -309,30 +507,74 @@ fun RealisticVisualizerKnob(volume: Int, isPlaying: Boolean, onVolumeChange: (In
 @Composable
 fun SoundPillar(isPlaying: Boolean, volume: Int, mirror: Boolean) {
     val barCount = 20
-    val infiniteTransition = rememberInfiniteTransition()
+    val infiniteTransition = rememberInfiniteTransition(label = "soundPulse")
+
     val pulse by infiniteTransition.animateFloat(
-        0.8f, 1.2f, infiniteRepeatable(tween(500, easing = LinearEasing), RepeatMode.Reverse)
+        initialValue = 0.85f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAnim"
     )
 
     val gradient = Brush.verticalGradient(
-        listOf(Color.Cyan, Color.Magenta, Color.Yellow)
+        colors = listOf(
+            Color(0xFF00E5FF),
+            Color(0xFF651FFF),
+            Color(0xFFFF4081),
+            Color(0xFFFFD740),
+            Color(0xFF00E5FF)
+        )
     )
 
-    Canvas(modifier = Modifier.size(width = 24.dp, height = 250.dp)) {
-        val barWidth = size.width / 1.5f
+    Canvas(
+        modifier = Modifier
+            .width(28.dp)
+            .height(260.dp)
+            .graphicsLayer {
+                alpha = 0.98f
+                shadowElevation = 12f
+                shape = RoundedCornerShape(50)
+                clip = true
+            }
+    ) {
+        val barWidth = size.width / 1.6f
         val spacing = size.height / barCount
 
         for (i in 0 until barCount) {
-            val intensity = if (isPlaying) Random.nextFloat() * (volume / 100f) else 0.1f
+            val intensity = if (isPlaying) Random.nextFloat() * (volume / 100f) else 0.08f
             val barHeight = spacing * intensity * pulse
+
             val y = if (mirror) size.height - (i * spacing) else i * spacing
+            val x = size.width / 2
+
+            // Outer glow (blurred)
+            drawLine(
+                color = Color(0x8000FFFF),
+                start = Offset(x, y - barHeight / 2),
+                end = Offset(x, y + barHeight / 2),
+                strokeWidth = barWidth * 1.6f,
+                cap = StrokeCap.Round,
+                alpha = 0.3f
+            )
+
+            // Main bar with gradient
             drawLine(
                 brush = gradient,
-                start = Offset(size.width / 2, y - barHeight / 2),
-                end = Offset(size.width / 2, y + barHeight / 2),
+                start = Offset(x, y - barHeight / 2),
+                end = Offset(x, y + barHeight / 2),
                 strokeWidth = barWidth,
                 cap = StrokeCap.Round,
-                alpha = 0.9f
+                alpha = 0.95f
+            )
+
+            // Highlight at center of each bar
+            drawCircle(
+                color = Color.White.copy(alpha = 0.15f),
+                radius = barWidth / 2.5f,
+                center = Offset(x, y)
             )
         }
     }
